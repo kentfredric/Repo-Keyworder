@@ -32,15 +32,13 @@ sub digester {
 
 sub get_cache_info {
   my ( $self, $category, $package, $version ) = @_;
-  $self->{internal_cache}                        = {} unless exists $self->{internal_cache};
-  $self->{internal_cache}->{category}            = {} unless exists $self->{internal_cache}->{category};
-  $self->{internal_cache}->{category}->{package} = {} unless exists $self->{internal_cache}->{category}->{package};
-  if ( exists $self->{internal_cache}->{category}->{package}->{version} ) {
-    return { %{ $self->{internal_cache}->{category}->{package}->{version} } };
+  my $cache_key = "${category}/${package}-${version}";
+  if ( exists $self->{internal_cache}->{$cache_key} ) {
+    return { %{ $self->{internal_cache}->{$cache_key} } };
   }
   my $cache_info = $self->_get_cache( $category, $package, $version );
   if ( ref $cache_info ) {
-    $self->{internal_cache}->{category}->{package}->{$version} = $cache_info;
+    $self->{internal_cache}->{$cache_key} = $cache_info;
     return { %{$cache_info} };
   }
   return;
@@ -107,7 +105,7 @@ sub _digest_file {
 
 sub _regenerate_cache {
   my ( $self, $category, $package ) = @_;
-  STDERR->printf("\e[35;1mregeneraing cache for %s/%s\e[0m\n", $category, $package);
+  STDERR->printf( "\e[35;1mregeneraing cache for %s/%s\e[0m\n", $category, $package );
   my $repo         = $self->repo;
   my $cache_config = <<"EOF";
 [DEFAULT]
@@ -125,8 +123,8 @@ EOF
     "--repo"                       => "gentoo",
     "--repositories-configuration" => $cache_config,
     "--cache-dir"                  => $self->cache_dir,
-    "--tolerant" =>,
-    "--jobs" => 3,
+    "--tolerant"                   =>,
+    "--jobs"                       => 3,
     "--update"                     => "${category}/${package}"
   );
   if ( $exit_code != 0 ) {
@@ -183,6 +181,35 @@ sub _ebuild_exists {
   return 1;
 }
 
+sub _ebuild_digest {
+  my ( $self, $category, $package, $version ) = @_;
+  my $cache_key = "${category}/${package}-${version}";
+  if ( exists $self->{ebuild_digest_cache}->{$cache_key} ) {
+    return $self->{ebuild_digest_cache}->{$cache_key};
+  }
+  my $ebuild_path = $self->_ebuild_path( $category, $package, $version );
+  my $ebuild_md5 = $self->_digest_file($ebuild_path);
+  return unless defined $ebuild_md5 and length $ebuild_md5;
+  $self->{ebuild_digest_cache}->{$cache_key} = $ebuild_md5;
+  return $ebuild_md5;
+}
+
+sub _eclass_digest {
+  my ( $self, $eclass ) = @_;
+  if ( exists $self->{eclass_digest_cache}->{$eclass} ) {
+    return $self->{eclass_digest_cache}->{$eclass};
+  }
+  my $eclass_path = $self->_eclass_path($eclass);
+  if ( !-e $eclass_path or -d $eclass_path ) {
+    warn "eclass ${eclass} no longer exists, lots of regeneration will be needed";
+    return;
+  }
+  my $eclass_md5 = $self->_digest_file($eclass_path);
+  return unless defined $eclass_md5 and length $eclass_md5;
+  $self->{eclass_digest_cache}->{$eclass} = $eclass_md5;
+  return $eclass_md5;
+}
+
 sub _read_cache {
   my ( $self, $category, $package, $version ) = @_;
   my ($cache_path) = $self->_cache_path( $category, $package, $version );
@@ -203,22 +230,16 @@ sub _cache_valid {
   if ( not exists $info->{_md5_} or not defined $info->{_md5_} or not length $info->{_md5_} ) {
     return;
   }
-  my $ebuild_path = $self->_ebuild_path( $category, $package, $version );
-  my $ebuild_md5 = $self->_digest_file($ebuild_path);
+  my $ebuild_md5 = $self->_ebuild_digest( $category, $package, $version );
   if ( $ebuild_md5 ne $info->{_md5_} ) {
     return;
   }
   if ( exists $info->{_eclasses_} ) {
     my (%eclasses) = split /\s+/, $info->{_eclasses_};
     for my $eclass ( sort keys %eclasses ) {
-      my $eclass_path = $self->_eclass_path($eclass);
-      if ( !-e $eclass_path or -d $eclass_path ) {
-        warn "eclass ${eclass} no longer exists, lots of regeneration will be needed";
-        return;
-      }
-      my $eclass_md5 = $self->_digest_file($eclass_path);
-      if ( $eclass_md5 ne $eclasses{$eclass} ) {
-        warn "eclass ${eclass} has changed ( $eclass_md5 vs $eclasses{$eclass} ), lots of regeneration will be needed";
+      my $eclass_digest = $self->_eclass_digest($eclass);
+      if ( $eclass_digest ne $eclasses{$eclass} ) {
+        warn "eclass ${eclass} has changed ( $eclass_digest vs $eclasses{$eclass} ), lots of regeneration will be needed";
         return;
       }
     }
