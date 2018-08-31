@@ -30,6 +30,11 @@ sub digester {
   return $_[0]->{digester};
 }
 
+sub cache_fallbacks {
+  exists $_[0]->{cache_fallbacks} or $_[0]->_init_cache_fallbacks;
+  return $_[0]->{cache_fallbacks};
+}
+
 sub get_cache_info {
   my ( $self, $category, $package, $version ) = @_;
   my $cache_key = "${category}/${package}-${version}";
@@ -79,6 +84,23 @@ sub _init_cache_dir {
 
   $self->{cache_dir} = $cache_dir;
   return;
+}
+
+sub _init_cache_fallbacks {
+  my ($self) = @_;
+  my $args = $self->{_init_args};
+  $self->{cache_fallbacks} = [];
+  return unless exists $args->{cache_fallbacks};
+
+  for my $fallback ( @{ delete $args->{cache_fallbacks} } ) {
+    local $!;
+    die "'cache_fallback' is either undefined or has no length" unless defined $fallback and length $fallback;
+
+    die "'cache_fallback' path '$fallback' does not exist: $!"     unless -e $fallback;
+    die "'cache_fallback' path '$fallback' is not a directory: $!" unless -d $fallback;
+
+    push @{ $self->{cache_fallbacks} }, $fallback;
+  }
 }
 
 sub _init_digester {
@@ -159,15 +181,40 @@ sub _eclass_path {
   return $self->repo . "/eclass/${eclass}.eclass";
 }
 
-sub _cache_exists {
+sub _find_valid_cache {
   my ( $self, $category, $package, $version ) = @_;
-  my ($cache_path) = $self->_cache_path( $category, $package, $version );
+  my $cache_key = "${category}/${package}-${version}";
+  my $ebuild_digest = $self->_ebuild_digest( $category, $package, $version );
+cache_fallback: for my $base ( $self->cache_dir, @{ $self->cache_fallbacks } ) {
+    my $cache_path = $base . "/${category}/${package}-${version}";
+    local $!;
+    next if !-e $cache_path;
+    next if -d $cache_path;
+    open my $fh, "<", $cache_path or die "Can't read $cache_path, $!";
+    my (%info);
+    while ( my $line = <$fh> ) {
+      chomp $line;
+      my ( $key, $value ) = split /=/, $line, 2;
+      $info{$key} = $value;
+    }
+    close $fh or warn "error closing $cache_path, $!";
+    next unless exists $info{_md5_};
+    next unless $info{_md5_} eq $ebuild_digest;
 
-  local $!;
-  if ( !-e $cache_path or -d $cache_path ) {
-    return;
+    if ( exists $info{_eclasses_} ) {
+      my (%eclasses) = split /\s+/, $info{_eclasses_};
+      for my $eclass ( sort keys %eclasses ) {
+        my $eclass_digest = $self->_eclass_digest($eclass);
+        if ( $eclass_digest ne $eclasses{$eclass} ) {
+          warn "eclass ${eclass} has changed ( $eclass_digest vs $eclasses{$eclass} ), lots of regeneration will be needed";
+          next cache_fallback;
+        }
+      }
+    }
+    $self->{internal_cache}->{$cache_key} = \%info;
+    return $cache_path;
   }
-  return 1;
+  return;
 }
 
 sub _ebuild_exists {
@@ -210,64 +257,18 @@ sub _eclass_digest {
   return $eclass_md5;
 }
 
-sub _read_cache {
-  my ( $self, $category, $package, $version ) = @_;
-  my ($cache_path) = $self->_cache_path( $category, $package, $version );
-  local $!;
-  open my $fh, "<", $cache_path or die "Can't read $cache_path, $!";
-  my (%info);
-  while ( my $line = <$fh> ) {
-    chomp $line;
-    my ( $key, $value ) = split /=/, $line, 2;
-    $info{$key} = $value;
-  }
-  close $fh or warn "error closing $cache_path, $!";
-  return \%info;
-}
-
-sub _cache_valid {
-  my ( $self, $category, $package, $version, $info ) = @_;
-  if ( not exists $info->{_md5_} or not defined $info->{_md5_} or not length $info->{_md5_} ) {
-    return;
-  }
-  my $ebuild_md5 = $self->_ebuild_digest( $category, $package, $version );
-  if ( $ebuild_md5 ne $info->{_md5_} ) {
-    return;
-  }
-  if ( exists $info->{_eclasses_} ) {
-    my (%eclasses) = split /\s+/, $info->{_eclasses_};
-    for my $eclass ( sort keys %eclasses ) {
-      my $eclass_digest = $self->_eclass_digest($eclass);
-      if ( $eclass_digest ne $eclasses{$eclass} ) {
-        warn "eclass ${eclass} has changed ( $eclass_digest vs $eclasses{$eclass} ), lots of regeneration will be needed";
-        return;
-      }
-    }
-  }
-  return 1;
-}
-
 sub _get_cache {
   my ( $self, $category, $package, $version ) = @_;
   if ( not $self->_ebuild_exists( $category, $package, $version ) ) {
     warn "no such ebuild for ${category}/${package} version ${version}";
   }
-  my $regened = 0;
-flow: {
-    if ( $self->_cache_exists( $category, $package, $version ) ) {
-      my $cache_info = $self->_read_cache( $category, $package, $version );
-      if ( $self->_cache_valid( $category, $package, $version, $cache_info ) ) {
-        return $cache_info;
-      }
-
-    }
-    last flow if $regened;
+  unless ( $self->_find_valid_cache( $category, $package, $version ) ) {
     $self->_regenerate_cache( $category, $package, $version );
-    $regened = 1;
-    redo flow;
+    unless ( $self->_find_valid_cache( $category, $package, $version ) ) {
+      warn "can't regenerate cache for ${category}/${package} version ${version}";
+    }
   }
-  warn "can't regenerate cache for ${category}/${package} version ${version}";
-  return;
+  return $self->{internal_cache}->{"${category}/${package}-${version}"};
 }
 
 1;
