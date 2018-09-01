@@ -11,7 +11,7 @@ my $r    = Repo::Keyworder->new(
   cache_fallbacks => ["/usr/portage/metadata/md5-cache/"],
 );
 my $mode = "keyword";
-$mode = "stable" if 1;
+$mode = "stable" if 0;
 
 #scan_repo();
 scan_package_terse( 'dev-lang', 'perl' );
@@ -55,6 +55,8 @@ sub scan_package_terse {
   my $keywords = $r->get_package_keywords("${category}/${package}");
   my $best     = $r->get_package_best_version("${category}/${package}");
   return unless defined $best;
+  my $have = [ $r->get_ebuild_keywords("${category}/${package}/${package}-${best}.ebuild") ];
+
   for my $key ( keys %{$keywords} ) {
     if ( $mode eq 'keyword' ) {
       $keywords->{$key} = 'unstable' if $keywords->{$key} eq 'stable';
@@ -65,7 +67,9 @@ sub scan_package_terse {
     }
   }
   my $missing = $r->get_ebuild_missing_keywords( "${category}/${package}/${package}-${best}.ebuild", $keywords );
+
   return unless keys %{$missing};
+  print pp { $package => { want => $keywords, missing => $missing, have => $have } };
 
   # my $versions = join q[ ], @{ $r->get_package_versions("${category}/${package}") };
   #my $keystring = join q[ ],

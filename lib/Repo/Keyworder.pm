@@ -32,16 +32,7 @@ sub get_ebuild_keywords {
   if ( !-e $path or -d $path ) {
     die "$path is not a file";
   }
-
-  # Convert path to atom
-  my ( $cat, $pkg, $version ) = $ebuild_rel =~ qr{
-    ^
-      ([^/]+) /
-      ([^/]+) /
-      \2-(.*?)\.ebuild
-    $
-  }x;
-  return $self->{cache}->get_keywords( $cat, $pkg, $version );
+  return $self->{cache}->get_keywords( $self->_split_ebuild($ebuild_rel) );
 }
 
 sub get_ebuild_missing_keywords {
@@ -50,7 +41,7 @@ sub get_ebuild_missing_keywords {
   my (%missing);
   for my $key ( sort keys %{$wanted} ) {
     if ( not exists $current{$key} ) {
-      $missing{$key} = 'unstable';
+      $missing{$key} = $wanted->{$key};
       next;
     }
     next if $current{$key} eq $wanted->{$key};
@@ -67,26 +58,14 @@ sub get_package_versions {
   if ( !-e $path or !-d $path ) {
     die "$path is not a package";
   }
-  my ( $cat, $pkg ) = $catpn =~ qr{
-  ^
-    ([^/]+) /
-    ([^/]+)
-  $
-  }x;
+  my ( $cat, $pkg ) = $self->_split_package($catpn);
   local ( $!, $? );
   opendir my $pkdir, $path or die "can't opendir $path, $! $?";
   my @versions;
   while ( my $ebuild = readdir $pkdir ) {
     next unless $ebuild =~ /\.ebuild$/;
     next if -d "${path}/${ebuild}";
-    my ($version) = $ebuild =~ qr{
-    ^
-      \Q${pkg}\E-
-      (.+)
-      \.ebuild
-     $
-    }x;
-    push @versions, $version;
+    push @versions, $self->_extract_ebuild_version( $pkg, $ebuild );
   }
   return [ sort { $self->{vsort}->vcmp( $a, $b ) } @versions ];
 }
@@ -94,13 +73,7 @@ sub get_package_versions {
 sub get_package_best_version {
   my ( $self, $catpn ) = @_;
   my (@versions) = @{ $self->get_package_versions($catpn) };
-  my ( $cat, $pkg ) = $catpn =~ qr{
-  ^
-    ([^/]+) /
-    ([^/]+)
-  $
-  }x;
-
+  my ( $cat, $pkg ) = $self->_split_package($catpn);
   while (@versions) {
     my $best = pop @versions;
     my (@keywords) = $self->get_ebuild_keywords("${cat}/${pkg}/${pkg}-${best}.ebuild");
@@ -113,16 +86,12 @@ sub get_package_best_version {
 sub get_package_keywords {
   my ( $self, $catpn ) = @_;
   my $path = $self->{repo} . '/' . $catpn;
-  my ( $cat, $pkg ) = $catpn =~ qr{
-  ^
-    ([^/]+) /
-    ([^/]+)
-  $
-  }x;
   my %keywords;
   for my $version ( @{ $self->get_package_versions($catpn) } ) {
-    (%keywords) =
-      %{ $self->_decode_keywords( "$catpn version $version", \%keywords, $self->{cache}->get_keywords( $cat, $pkg, $version ) ) };
+    (%keywords) = %{
+      $self->_decode_keywords( "$catpn version $version",
+        \%keywords, $self->{cache}->get_keywords( $self->_split_package($catpn), $version ) )
+    };
   }
   return \%keywords;
 }
@@ -158,5 +127,41 @@ sub _decode_keywords {
   return \%keywords;
 }
 
+sub _split_ebuild {
+  my ( $self, $ebuild_rel ) = @_;
+
+  # Convert path to atom
+  my ( $cat, $pkg, $version ) = $ebuild_rel =~ qr{
+    ^
+      ([^/]+) /
+      ([^/]+) /
+      \2-(.*?)\.ebuild
+    $
+  }x;
+  return ( $cat, $pkg, $version );
+}
+
+sub _split_package {
+  my ( $self, $catpn ) = @_;
+  my ( $cat,  $pkg )   = $catpn =~ qr{
+  ^
+    ([^/]+) /
+    ([^/]+)
+  $
+  }x;
+  return ( $cat, $pkg );
+}
+
+sub _extract_ebuild_version {
+  my ( $self, $package, $ebuild ) = @_;
+  my ($version) = $ebuild =~ qr{
+    ^
+      \Q${package}\E-
+      (.+)
+      \.ebuild
+     $
+    }x;
+  return $version;
+}
 1;
 
