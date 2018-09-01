@@ -87,6 +87,24 @@ sub get_package_best_version {
   return;
 }
 
+sub get_package_best_stable_version {
+  my ( $self, $catpn ) = @_;
+  my (@versions) = @{ $self->get_package_versions($catpn) };
+  my ( $cat, $pkg ) = $self->_split_package($catpn);
+  while (@versions) {
+    my $best = pop @versions;
+    my (@keywords) = $self->get_ebuild_keywords("${cat}/${pkg}/${pkg}-${best}.ebuild");
+    next unless @keywords;
+    my (%keyword_map) = %{ $self->_decode_keywords( "${cat}/${pkg}-${best}", {}, @keywords ) };
+    for my $keyword ( sort keys %keyword_map ) {
+      if ( $keyword_map{$keyword} eq 'stable' ) {
+        return $best;
+      }
+    }
+  }
+  return;
+}
+
 sub get_package_keywords {
   my ( $self, $catpn ) = @_;
   my $path = $self->{repo} . '/' . $catpn;
