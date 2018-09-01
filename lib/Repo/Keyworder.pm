@@ -44,6 +44,23 @@ sub get_ebuild_keywords {
   return $self->{cache}->get_keywords( $cat, $pkg, $version );
 }
 
+sub get_ebuild_missing_keywords {
+  my ( $self, $ebuild_rel, $wanted ) = @_;
+  my (%current) = %{ $self->_decode_keywords( $ebuild_rel, {}, $self->get_ebuild_keywords($ebuild_rel) ) };
+  my (%missing);
+  for my $key ( sort keys %{$wanted} ) {
+    if ( not exists $current{$key} ) {
+      $missing{$key} = 'unstable';
+      next;
+    }
+    next if $current{$key} eq $wanted->{$key};
+    if ( $current{$key} eq 'unstable' and $wanted->{$key} eq 'stable' ) {
+      $missing{$key} = 'stable';
+    }
+  }
+  return \%missing;
+}
+
 sub get_package_versions {
   my ( $self, $catpn ) = @_;
   my $path = $self->{repo} . '/' . $catpn;
@@ -74,6 +91,25 @@ sub get_package_versions {
   return [ sort { $self->{vsort}->vcmp( $a, $b ) } @versions ];
 }
 
+sub get_package_best_version {
+  my ( $self, $catpn ) = @_;
+  my (@versions) = @{ $self->get_package_versions($catpn) };
+  my ( $cat, $pkg ) = $catpn =~ qr{
+  ^
+    ([^/]+) /
+    ([^/]+)
+  $
+  }x;
+
+  while (@versions) {
+    my $best = pop @versions;
+    my (@keywords) = $self->get_ebuild_keywords("${cat}/${pkg}/${pkg}-${best}.ebuild");
+    next unless @keywords;
+    return $best;
+  }
+  return;
+}
+
 sub get_package_keywords {
   my ( $self, $catpn ) = @_;
   my $path = $self->{repo} . '/' . $catpn;
@@ -85,31 +121,39 @@ sub get_package_keywords {
   }x;
   my %keywords;
   for my $version ( @{ $self->get_package_versions($catpn) } ) {
-    for my $keyword ( $self->{cache}->get_keywords( $cat, $pkg, $version ) ) {
-      if ( $keyword =~ /^~(.*)$/ ) {
-        if ( not exists $keywords{$1} ) {
-          $keywords{$1} = 'unstable';
-          next;
-        }
+    (%keywords) =
+      %{ $self->_decode_keywords( "$catpn version $version", \%keywords, $self->{cache}->get_keywords( $cat, $pkg, $version ) ) };
+  }
+  return \%keywords;
+}
+
+sub _decode_keywords {
+  my ( $self, $context, $store, @keywords ) = @_;
+  my (%keywords) = %{$store};
+  for my $keyword (@keywords) {
+    if ( $keyword =~ /^~(.*)$/ ) {
+      if ( not exists $keywords{$1} ) {
+        $keywords{$1} = 'unstable';
         next;
       }
-      if ( $keyword =~ /^([^~-].*)$/ ) {
-        if ( not exists $keywords{$1} ) {
-          $keywords{$1} = 'stable';
-          next;
-        }
-        next if $keywords{$1} eq 'stable';
-        if ( $keywords{$1} eq 'unstable' ) {
-          $keywords{$1} = 'stable';
-          next;
-        }
-      }
-      if ( $keyword =~ /^-(.*)$/ ) {
-        $keywords{$1} = 'blocked';
-        next;
-      }
-      warn "Unhandled keyword $keyword for $catpn version $version";
+      next;
     }
+    if ( $keyword =~ /^([^~-].*)$/ ) {
+      if ( not exists $keywords{$1} ) {
+        $keywords{$1} = 'stable';
+        next;
+      }
+      next if $keywords{$1} eq 'stable';
+      if ( $keywords{$1} eq 'unstable' ) {
+        $keywords{$1} = 'stable';
+        next;
+      }
+    }
+    if ( $keyword =~ /^-(.*)$/ ) {
+      $keywords{$1} = 'blocked';
+      next;
+    }
+    warn "Unhandled keyword $keyword for $context";
   }
   return \%keywords;
 }

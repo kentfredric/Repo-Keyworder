@@ -1,5 +1,3 @@
-## Please see file perltidy.ERR
-
 use strict;
 use warnings;
 
@@ -12,6 +10,8 @@ my $r    = Repo::Keyworder->new(
   repo            => $repo,
   cache_fallbacks => ["/usr/portage/metadata/md5-cache/"],
 );
+my $mode = "keyword";
+$mode = "stable" if 1;
 
 #scan_repo();
 scan_package_terse( 'dev-lang', 'perl' );
@@ -53,12 +53,29 @@ sub scan_category_filter {
 sub scan_package_terse {
   my ( $category, $package ) = @_;
   my $keywords = $r->get_package_keywords("${category}/${package}");
-  printf "%s/%s: (%s) %s\n", $category, $package, ( join q[ ], @{ $r->get_package_versions("${category}/${package}") } ),
-    (
-    join q[ ],
-    map { $keywords->{$_} eq 'unstable' ? "~$_" : $keywords->{$_} eq 'stable' ? "$_" : $keywords->{$_} eq 'blocked' ? "-$_" : "($_)" }
-      sort keys %{$keywords}
-    );
+  my $best     = $r->get_package_best_version("${category}/${package}");
+  return unless defined $best;
+  for my $key ( keys %{$keywords} ) {
+    if ( $mode eq 'keyword' ) {
+      $keywords->{$key} = 'unstable' if $keywords->{$key} eq 'stable';
+      delete $keywords->{$key} unless $keywords->{$key} eq 'unstable';
+    }
+    if ( $mode eq 'stable' ) {
+      delete $keywords->{$key} unless $keywords->{$key} eq 'stable';
+    }
+  }
+  my $missing = $r->get_ebuild_missing_keywords( "${category}/${package}/${package}-${best}.ebuild", $keywords );
+  return unless keys %{$missing};
+
+  # my $versions = join q[ ], @{ $r->get_package_versions("${category}/${package}") };
+  #my $keystring = join q[ ],
+  #  map { $keywords->{$_} eq 'unstable' ? "~$_" : $keywords->{$_} eq 'stable' ? "$_" : $keywords->{$_} eq 'blocked' ? "-$_" : "($_)" }
+  #  sort keys %{$keywords};
+  my $keystring = join q[ ],
+    map { $missing->{$_} eq 'unstable' ? "~$_" : $missing->{$_} eq 'stable' ? "$_" : $missing->{$_} eq 'blocked' ? "-$_" : "($_)" }
+    sort keys %{$missing};
+
+  printf "%s/%s: \e[32m%s\e[0m => %s\n", $category, $package, $best, $keystring;
 }
 
 sub scan_package {
