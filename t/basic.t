@@ -56,6 +56,7 @@ sub scan_package_terse {
   my $best     = $r->get_package_best_version("${category}/${package}");
   return unless defined $best;
   my $have = [ $r->get_ebuild_keywords("${category}/${package}/${package}-${best}.ebuild") ];
+  my $deps = [ sort keys %{ $r->get_ebuild_dependencies("${category}/${package}/${package}-${best}.ebuild") } ];
 
   for my $key ( keys %{$keywords} ) {
     if ( $mode eq 'keyword' ) {
@@ -69,7 +70,8 @@ sub scan_package_terse {
   my $missing = $r->get_ebuild_missing_keywords( "${category}/${package}/${package}-${best}.ebuild", $keywords );
 
   return unless keys %{$missing};
-  print pp { $package => { want => $keywords, missing => $missing, have => $have } };
+
+  # print pp { $package => { want => $keywords, missing => $missing, have => $have } };
 
   # my $versions = join q[ ], @{ $r->get_package_versions("${category}/${package}") };
   #my $keystring = join q[ ],
@@ -79,7 +81,7 @@ sub scan_package_terse {
     map { $missing->{$_} eq 'unstable' ? "~$_" : $missing->{$_} eq 'stable' ? "$_" : $missing->{$_} eq 'blocked' ? "-$_" : "($_)" }
     sort keys %{$missing};
 
-  printf "%s/%s: \e[32m%s\e[0m => %s\n", $category, $package, $best, $keystring;
+  printf "%s/%s: \e[32m%s\e[0m => %s \e[31m(\e[0m%s\e[31m)\e[0m\n", $category, $package, $best, $keystring, join q[, ], @{$deps};
 }
 
 sub scan_package {

@@ -96,6 +96,23 @@ sub get_package_keywords {
   return \%keywords;
 }
 
+sub get_ebuild_dependencies {
+  my ( $self, $ebuild_rel ) = @_;
+  my $path = $self->{repo} . '/' . $ebuild_rel;
+  if ( !-e $path or -d $path ) {
+    die "$path is not a file";
+  }
+  my $info = $self->{cache}->get_cache_info( $self->_split_ebuild($ebuild_rel) );
+  my (%alldepend);
+  for my $depend ( sort keys %{$info} ) {
+    next unless $depend =~ /DEPEND$/;
+    for my $dep ( $self->_parse_depend( $info->{$depend} ) ) {
+      $alldepend{$dep} = undef;
+    }
+  }
+  return \%alldepend;
+}
+
 sub _decode_keywords {
   my ( $self, $context, $store, @keywords ) = @_;
   my (%keywords) = %{$store};
@@ -162,6 +179,92 @@ sub _extract_ebuild_version {
      $
     }x;
   return $version;
+}
+
+sub _extract_paren {
+  my ( $self, $string ) = @_;
+  my $out    = "";
+  my $pdepth = 0;
+  if ( $string =~ /\A([^(]*\()/ms ) {
+
+    #warn "opening[$pdepth]: <$1>, $string";
+
+    $out .= $1;
+    substr $string, 0, length $1, "";
+    $pdepth++;
+  }
+  while ( $pdepth > 0 ) {
+    if ( $string =~ /\A([^()]*\()/ms ) {
+
+      # warn "opening[$pdepth]: <$1>, $string";
+      $out .= $1;
+      substr $string, 0, length $1, "";
+      $pdepth++;
+      next;
+    }
+    if ( $string =~ /\A([^()]*\))/ms ) {
+
+      #warn "closing[$pdepth]: <$1>, $string";
+
+      $out .= $1;
+      substr $string, 0, length $1, "";
+      $pdepth--;
+      next;
+    }
+    die "unbalanced () pair: $string + $pdepth";
+  }
+  return $out;
+}
+
+sub _parse_depend {
+  my ( $self, $depstring ) = @_;
+  my (@out);
+  while ( length $depstring ) {
+    if ( $depstring =~ /\A(\s+)/ms ) {
+      substr $depstring, 0, length $1, "";
+      next;
+    }
+    my ( $token, $rest ) = $depstring =~ /\A(\S+)(.*?)\z/ms;
+
+    # handle USE flags
+    if ( $token =~ /[?]\z/ms ) {
+      my $paren_string = $self->_extract_paren($rest);
+      substr $depstring, 0, length "${token}${paren_string}", "";
+      $paren_string =~ s/\A[^(]*?\(//;
+      $paren_string =~ s/\)[^)]*?\z//;
+      push @out, $self->_parse_depend($paren_string);
+      next;
+    }
+
+    # handle cond groups
+    if ( $token =~ /(\|\||\?\?|\^\^)\z/ms ) {
+      my $paren_string = $self->_extract_paren($rest);
+      substr $depstring, 0, length "${token}${paren_string}", "";
+      $paren_string =~ s/\A[^(]*?\(//ms;
+      $paren_string =~ s/\)[^)]*?\z//ms;
+      push @out, $self->_parse_depend($paren_string);
+      next;
+    }
+
+    # handle cond groups
+    if ( $token =~ /\A\(\z/ms ) {
+
+      # opening paren included as that's the starting condition for extraction
+      my $paren_string = $self->_extract_paren("${token}${rest}");
+
+      substr $depstring, 0, length $paren_string, "";
+      $paren_string =~ s/\A[^(]*?\(//ms;
+      $paren_string =~ s/\)[^)]*?\z//ms;
+      push @out, $self->_parse_depend($paren_string);
+      next;
+    }
+
+    # By now we should only have pure deps
+    push @out, $token;
+    substr $depstring, 0, length $token, "";
+    next;
+  }
+  return @out;
 }
 1;
 
