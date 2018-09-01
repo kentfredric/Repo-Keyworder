@@ -53,7 +53,7 @@ sub scan_category_filter {
 sub keyword_check {
   my ( $category, $package ) = @_;
   my $keywords = $r->get_package_keywords("${category}/${package}");
-  my $best     = $r->get_package_best_version("${category}/${package}");
+  my $best     = $r->get_package_best_stable_version("${category}/${package}");
   return unless defined $best;
 
   my $have = [ $r->get_ebuild_keywords("${category}/${package}/${package}-${best}.ebuild") ];
