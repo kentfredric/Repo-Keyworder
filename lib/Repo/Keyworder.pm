@@ -12,6 +12,7 @@ our $VERSION = '0.001000';
 
 use Repo::Keyworder::Cache;
 use Repo::Keyworder::VersionSort;
+use Repo::Keyworder::AtomParse;
 
 sub new {
   my ( $self, %opts ) = @_;
@@ -22,7 +23,8 @@ sub new {
       repo => $opts{repo},
       ( exists $opts{cache_fallbacks} ? ( cache_fallbacks => $opts{cache_fallbacks} ) : () ),
     ),
-    vsort => Repo::Keyworder::VersionSort->new(),
+    vsort     => Repo::Keyworder::VersionSort->new(),
+    atomparse => Repo::Keyworder::AtomParse->new(),
   }, $self;
 }
 
@@ -94,6 +96,17 @@ sub get_package_keywords {
     };
   }
   return \%keywords;
+}
+
+sub get_simplified_ebuild_dependencies {
+  my ( $self, $ebuild_rel ) = @_;
+  my $deps = $self->get_ebuild_dependencies($ebuild_rel);
+  my %outdeps;
+  for my $dep ( sort keys %{$deps} ) {
+    my $simple = $self->{atomparse}->to_catpn($dep);
+    $outdeps{$simple} = undef;
+  }
+  return \%outdeps;
 }
 
 sub get_ebuild_dependencies {

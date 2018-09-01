@@ -56,7 +56,7 @@ sub scan_package_terse {
   my $best     = $r->get_package_best_version("${category}/${package}");
   return unless defined $best;
   my $have = [ $r->get_ebuild_keywords("${category}/${package}/${package}-${best}.ebuild") ];
-  my $deps = [ sort keys %{ $r->get_ebuild_dependencies("${category}/${package}/${package}-${best}.ebuild") } ];
+  my $deps = [ sort keys %{ $r->get_simplified_ebuild_dependencies("${category}/${package}/${package}-${best}.ebuild") } ];
 
   for my $key ( keys %{$keywords} ) {
     if ( $mode eq 'keyword' ) {
