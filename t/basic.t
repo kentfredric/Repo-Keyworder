@@ -28,6 +28,7 @@ sub scan_repo {
     scan_category($category);
   }
 }
+
 sub scan_category {
   my ($category) = @_;
   opendir my $devperl, "${repo}/${category}";
@@ -51,14 +52,15 @@ sub scan_category_filter {
 
 sub scan_package_terse {
   my ( $category, $package ) = @_;
-  my $keywords = $r->get_package_keywords( "${category}/${package}" );
-  printf "%s/%s: %s\n", $category, $package, join q[ ], map {
-    $keywords->{$_} eq 'unstable' ? "~$_"
-    : $keywords->{$_} eq 'stable' ? "$_"
-    : $keywords->{$_} eq 'blocked' ? "-$_" :
-    "($_)"
-  } sort keys %{$keywords};
+  my $keywords = $r->get_package_keywords("${category}/${package}");
+  printf "%s/%s: (%s) %s\n", $category, $package, ( join q[ ], @{ $r->get_package_versions("${category}/${package}") } ),
+    (
+    join q[ ],
+    map { $keywords->{$_} eq 'unstable' ? "~$_" : $keywords->{$_} eq 'stable' ? "$_" : $keywords->{$_} eq 'blocked' ? "-$_" : "($_)" }
+      sort keys %{$keywords}
+    );
 }
+
 sub scan_package {
   my ( $category, $package ) = @_;
   opendir my $packagedir, "${repo}/${category}/${package}";

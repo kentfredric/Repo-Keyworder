@@ -11,6 +11,7 @@ our $VERSION = '0.001000';
 # AUTHORITY
 
 use Repo::Keyworder::Cache;
+use Repo::Keyworder::VersionSort;
 
 sub new {
   my ( $self, %opts ) = @_;
@@ -21,6 +22,7 @@ sub new {
       repo => $opts{repo},
       ( exists $opts{cache_fallbacks} ? ( cache_fallbacks => $opts{cache_fallbacks} ) : () ),
     ),
+    vsort => Repo::Keyworder::VersionSort->new(),
   }, $self;
 }
 
@@ -42,7 +44,7 @@ sub get_ebuild_keywords {
   return $self->{cache}->get_keywords( $cat, $pkg, $version );
 }
 
-sub get_package_keywords {
+sub get_package_versions {
   my ( $self, $catpn ) = @_;
   my $path = $self->{repo} . '/' . $catpn;
   if ( !-e $path or !-d $path ) {
@@ -56,7 +58,7 @@ sub get_package_keywords {
   }x;
   local ( $!, $? );
   opendir my $pkdir, $path or die "can't opendir $path, $! $?";
-  my %keywords;
+  my @versions;
   while ( my $ebuild = readdir $pkdir ) {
     next unless $ebuild =~ /\.ebuild$/;
     next if -d "${path}/${ebuild}";
@@ -67,6 +69,22 @@ sub get_package_keywords {
       \.ebuild
      $
     }x;
+    push @versions, $version;
+  }
+  return [ sort { $self->{vsort}->vcmp( $a, $b ) } @versions ];
+}
+
+sub get_package_keywords {
+  my ( $self, $catpn ) = @_;
+  my $path = $self->{repo} . '/' . $catpn;
+  my ( $cat, $pkg ) = $catpn =~ qr{
+  ^
+    ([^/]+) /
+    ([^/]+)
+  $
+  }x;
+  my %keywords;
+  for my $version ( @{ $self->get_package_versions($catpn) } ) {
     for my $keyword ( $self->{cache}->get_keywords( $cat, $pkg, $version ) ) {
       if ( $keyword =~ /^~(.*)$/ ) {
         if ( not exists $keywords{$1} ) {
