@@ -105,6 +105,7 @@ sub get_simplified_ebuild_dependencies {
   my $deps = $self->get_ebuild_dependencies($ebuild_rel);
   my %outdeps;
   for my $dep ( sort keys %{$deps} ) {
+    next if $dep =~ /^!/;
     my $simple = $self->{atomparse}->to_catpn($dep);
     $outdeps{$simple} = undef;
   }
