@@ -58,7 +58,9 @@ sub get_package_versions {
   my ( $self, $catpn ) = @_;
   my $path = $self->{repo} . '/' . $catpn;
   if ( !-e $path or !-d $path ) {
-    die "$path is not a package";
+
+    # warn "$path is not a package";
+    return [];
   }
   my ( $cat, $pkg ) = $self->_split_package($catpn);
   local ( $!, $? );
