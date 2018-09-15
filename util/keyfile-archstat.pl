@@ -24,6 +24,7 @@ my $atomparse = Repo::Keyworder::AtomParse->new();
 
 my (%arch_email) = (
   'alpha'           => 'alpha@gentoo.org',
+  'amd64'           => 'amd64@gentoo.org',
   'amd64-fbsd'      => 'bsd@gentoo.org',
   'amd64-linux'     => 'prefix@gentoo.org',
   'arm'             => 'arm@gentoo.org',
