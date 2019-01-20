@@ -55,6 +55,9 @@ sub keyword_check {
   my ( $repo, $category, $package ) = @_;
   my $keywords = $r->get_package_keywords("${category}/${package}");
   my $best     = $r->get_package_best_version("${category}/${package}");
+  if ( not defined $best ) {
+    # warn "\e[33m no best version for $category/$package\e[0m\n";
+  }
   return unless defined $best;
 
   my $have = [ $r->get_ebuild_keywords("${category}/${package}/${package}-${best}.ebuild") ];
@@ -65,11 +68,18 @@ sub keyword_check {
   }
 
   my $missing = $r->get_ebuild_missing_keywords( "${category}/${package}/${package}-${best}.ebuild", $keywords );
+
+  if ( not keys %{$missing} ) {
+    # warn "\e[32m no missing keywords for ${category}/${package} \e[34m( @{[ sort keys %{$keywords} ]} )\e[0m\n"
+  }
   return unless keys %{$missing};
+
 
   my $keystring = join q[ ],
     map { $missing->{$_} eq 'unstable' ? "~$_" : $missing->{$_} eq 'stable' ? "$_" : $missing->{$_} eq 'blocked' ? "-$_" : "($_)" }
     sort keys %{$missing};
+
+  warn "\e[33mMissing keywords for ${category}/${package}:\e[0m $keystring\n";
 
   my $deps = [ sort keys %{ $r->get_simplified_ebuild_dependencies("${category}/${package}/${package}-${best}.ebuild") } ];
 
@@ -78,13 +88,18 @@ dep_chck: for my $dep ( @{$deps} ) {
     my $dep_best = $r->get_package_best_version($dep);
     if ( not defined $dep_best ) {
 
-      # warn "No such dependency $dep";
+      warn "No such dependency $dep for ${category}/${package}\n";
       next;
     }
     my ( $depcat, $deppkg ) = split qr{/}, $dep;
     my $dep_missing = $r->get_ebuild_missing_keywords( "${depcat}/${deppkg}/${deppkg}-${dep_best}.ebuild", $missing );
     if ( keys %{$dep_missing} ) {
       $broken->{$_} = $dep_missing->{$_} for keys %{$dep_missing};
+      my $missing_depstring =  join q[ ],
+    map { $dep_missing->{$_} eq 'unstable' ? "~$_" : $dep_missing->{$_} eq 'stable' ? "$_" : $dep_missing->{$_} eq 'blocked' ? "-$_" : "($_)" }
+    sort keys %{$dep_missing};
+
+      warn " - missing keyworded dep $dep ( $missing_depstring )\n";
     }
   }
   for my $key ( sort keys %{$missing} ) {
