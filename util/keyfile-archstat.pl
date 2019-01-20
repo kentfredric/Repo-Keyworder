@@ -46,6 +46,7 @@ my (%arch_email) = (
   'x64-cygwin'      => 'prefix@gentoo.org',
   'x64-macos'       => 'prefix@gentoo.org',
   'x64-solaris'     => 'prefix@gentoo.org',
+  'x86'             => 'x86@gentoo.org',
   'x86-fbsd'        => 'bsd@gentoo.org',
   'x86-linux'       => 'prefix@gentoo.org',
   'x86-macos'       => 'prefix@gentoo.org',
