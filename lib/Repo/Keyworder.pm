@@ -54,6 +54,21 @@ sub get_ebuild_missing_keywords {
   return \%missing;
 }
 
+sub get_ebuild_missing_keywords_stable {
+  my ( $self, $ebuild_rel, $wanted ) = @_;
+  my (%current) = %{ $self->_decode_keywords( $ebuild_rel, {}, $self->get_ebuild_keywords($ebuild_rel) ) };
+  my (%missing);
+  for my $key ( sort keys %{$wanted} ) {
+    next unless exists $current{$key};
+    next if $current{$key} eq 'stable';
+    if ( $current{$key} eq 'unstable' and $wanted->{$key} eq 'stable' ) {
+      $missing{$key} = 'stable';
+    }
+  }
+  return \%missing;
+}
+
+
 sub get_package_versions {
   my ( $self, $catpn ) = @_;
   my $path = $self->{repo} . '/' . $catpn;
